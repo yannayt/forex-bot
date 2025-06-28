@@ -1,0 +1,87 @@
+import requests
+import pandas as pd
+import numpy as np
+
+# ===== הגדרות טלגרם =====
+TOKEN = '7575927248:AAGGCg9IiF0RijLRct1szlK8ZlnddwNLUhs'
+CHAT_ID = '5147259544'
+
+def send_telegram_message(text):
+    url = f'https://api.telegram.org/bot{TOKEN}/sendMessage'
+    data = {'chat_id': CHAT_ID, 'text': text}
+    response = requests.post(url, data=data)
+    print("Status:", response.status_code)
+    print("Response:", response.json())
+
+# ===== סימולציה של נתוני שוק =====
+def get_sample_data():
+    prices = np.linspace(2325, 2335, 100) + np.random.normal(0, 0.8, 100)
+    return pd.DataFrame({'close': prices})
+
+# ===== חישוב אינדיקטורים =====
+def calculate_indicators(df):
+    df['EMA20'] = df['close'].ewm(span=20, adjust=False).mean()
+    df['EMA50'] = df['close'].ewm(span=50, adjust=False).mean()
+    df['RSI'] = compute_rsi(df['close'])
+    df['MACD'] = df['close'].ewm(12, adjust=False).mean() - df['close'].ewm(26, adjust=False).mean()
+    df['Signal'] = df['MACD'].ewm(9, adjust=False).mean()
+    df['UpperBB'] = df['close'].rolling(20).mean() + 2 * df['close'].rolling(20).std()
+    df['LowerBB'] = df['close'].rolling(20).mean() - 2 * df['close'].rolling(20).std()
+    return df
+
+# ===== חישוב RSI =====
+def compute_rsi(series, period=14):
+    delta = series.diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+# ===== איתור הזדמנות =====
+def check_for_signal(df):
+    last = df.iloc[-1]
+    signals = []
+
+    if last['RSI'] > 70:
+        signals.append("RSI>70")
+    if last['MACD'] < last['Signal']:
+        signals.append("MACD bearish")
+    if last['EMA20'] < last['EMA50']:
+        signals.append("EMA downtrend")
+    if last['close'] > last['UpperBB']:
+        signals.append("Bollinger breakout")
+
+    return signals
+
+# ===== בניית ההודעה =====
+def build_signal_message(signals, entry):
+    sl = round(entry + 3.5, 2)
+    tp = round(entry - 9.0, 2)
+    message = f'''
+🚨 Forex Signal Alert
+Pair: XAU/USD
+Action: 📉 SELL
+Entry: {entry}
+Stop Loss: {sl}
+Take Profit: {tp}
+Validity: 30 minutes
+Strategy: {' + '.join(signals)}
+'''
+    return message
+
+# ===== הרצת הבוט =====
+def run_bot():
+    df = get_sample_data()
+    df = calculate_indicators(df)
+    signals = check_for_signal(df)
+
+    if len(signals) >= 3:
+        entry = round(df.iloc[-1]['close'], 2)
+        msg = build_signal_message(signals, entry)
+        send_telegram_message(msg)
+    else:
+        print("No signal this round.")
+
+# ===== הפעלה =====
+if __name__ == "__main__":
+    run_bot()
